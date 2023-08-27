@@ -159,7 +159,7 @@ function computeEntryPosition(entry) {
         .corner {
             width: 170px;
             height: 30px;
-            background-color: lightgreen;
+            border-right: 1px solid black;
         }
         .xaxis {
             width: calc(100% - 170px);
@@ -174,6 +174,7 @@ function computeEntryPosition(entry) {
                 border-right: 1px solid black;
                 flex-grow: 1;
                 position: relative;
+
                 &.hash {
                     background-color: lightgray;
                 }
