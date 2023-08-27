@@ -38,6 +38,7 @@ const computeStyle = computed(() => {
 .entry {
     border: 1px solid red;
     border-left-width: 4px;
+    border-radius: 5px;
     background-color: aquamarine;
     color: black;
     display: flex;
