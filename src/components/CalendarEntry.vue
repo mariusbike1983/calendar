@@ -5,7 +5,14 @@ const props = defineProps({
     rowid:      0,
     text:       "",
     detail:     "",
-    position:   {},
+    position:   {
+        top:                -1, 
+        left:               -1, 
+        botton:             -1, 
+        width:              -1,
+        intersectsLeft:     false,
+        intersectsRight:    false
+    },
 });
 
 const computeStyle = computed(() => {
@@ -25,10 +32,16 @@ const computeStyle = computed(() => {
         display: 'none'
     }
 })
+
 </script>
 
 <template>
-    <div class="entry" :style="computeStyle">
+    <div class="entry" 
+        :style="computeStyle" 
+        :class="{
+            'cut-left': props.position.intersectsLeft, 
+            'cut-right': props.position.intersectsRight
+        }">
         <div class="text">{{ text }}</div>
         <div class="detail">{{ detail }}</div>
     </div>
@@ -45,12 +58,27 @@ const computeStyle = computed(() => {
     flex-direction: column;
     justify-items: center;
     position: absolute;
+    &.cut-right {
+        border-top-right-radius: 0px;
+        border-bottom-right-radius: 0px;
+    }
+    &.cut-left {
+        border-top-left-radius: 0px;
+        border-bottom-left-radius: 0px;
+    }
+
     .detail {
         font-size: 11px;
         color: slateblue;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .text {
         font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
 }

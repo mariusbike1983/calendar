@@ -2,6 +2,7 @@
 import { nextTick, onMounted, ref, watch } from 'vue';
 import InfoElement from './InfoElement.vue';
 import CalendarEntry from './CalendarEntry.vue';
+import { createEntry } from '../services/CalendarEntryService';
 
 const props = defineProps({
     xaxis:      [],
@@ -11,11 +12,15 @@ const props = defineProps({
 
 const yaxiscontent = ref(null);
 const xaxiscontent = ref(null);
+const yaxisrows = ref([]);
+const contentrows = ref([]);
+const xaxiscells = ref([]);
 const viewport = ref(null);
 const hasVerticalScroll = ref(false);
 const hasHorizontalScroll = ref(false);
 const selectedRowIndex = ref(-1);
-
+const rowEntries = ref(new Map());
+const entriesById = new Map();
 
 async function contentscroll(e) {
     await nextTick(() => {
@@ -33,12 +38,88 @@ function isRowSelected(index){
 };
 
 onMounted(() => {
-    nextTick(() => synchUi());
+    nextTick(() => {
+        synchUi();
+        distributeEntries();
+        intersectEntries(props.xaxis.length);
+    });
 });
 
-const yaxisrows = ref([]);
-const contentrows = ref([]);
-const xaxiscells = ref([]);
+/**
+ * Distribute entries by row
+ */
+function distributeEntries() {
+    if (props.entries) {
+        props.entries.forEach(entry => {
+            entriesById.set(entry.uuid, entry);
+            let rowdata = []; 
+            if (rowEntries.value.has(entry.rowid)) {
+                rowdata = rowEntries.value.get(entry.rowid);
+            } else {
+                rowEntries.value.set(entry.rowid, rowdata);
+            }
+            rowdata.push(entry);
+        });
+    }
+}
+
+function intersectEntries(rowsize) {
+    const rowTemplate = Array(rowsize).fill("-1");
+    for (let rowdata of rowEntries.value.values()){
+        if (rowdata.length <= 1) {
+            continue;
+        }
+        // row contains at least two entries that might overlap
+        // construct the template overlapping structure (one pass for all possible segments)
+        rowdata.forEach(entry => {
+            rowTemplate.fill(entry.uuid, entry.from-1, entry.to);
+        });
+        // compute segments and constucts temporary entries
+        let pId = "", newStart = -1;
+        const segments = new Map();
+        rowTemplate.forEach((cell, index) => {
+            if (cell !== "-1") {
+                // as soon as we find an occupied cell and the start of a new segment has not been marked
+                if (newStart === -1) {
+                    // mark it
+                    pId = cell;
+                    newStart = index + 1;
+                }
+            }
+            if (cell === "-1" || cell !== pId) {
+                // the segment has ended (either by finding an unoccupied cell or by the start of a new segment)
+                if (newStart !== -1) { // theoretically could not happen... but still
+                    const tEntry = entriesById.get(pId);
+                    let segmentsData = segments.get(tEntry.uuid);
+                    if (!segmentsData) {
+                        segmentsData = [];
+                        segments.set(tEntry.uuid, segmentsData);
+                    }
+                    const segment = createEntry(tEntry.uuid, newStart, index, tEntry.rowid, tEntry.text, tEntry.detail);
+                    segmentsData.push(segment);
+                    if (cell !== "-1") {
+                        // a new segment already starts here
+                        newStart = index+1;
+                        pId = cell;
+                    } else {
+                        // reset the segment, waiting for a new one
+                        newStart = -1;
+                        pId = "";
+                    }
+                }
+            }
+        });
+        // replace row data entries with their segments
+        for(let segmentKey of segments.keys()) {
+            const tEntry = entriesById.get(segmentKey);
+            const ndx = rowdata.indexOf(tEntry);
+            const segmentdata = segments.get(segmentKey);
+            rowdata.splice(ndx, 1, ...segmentdata);
+        }
+        // reset template
+        rowTemplate.fill("-1", 0, rowTemplate.length);
+    }
+}
 
 function synchUi() {
     if (viewport.value) {
@@ -64,28 +145,25 @@ function xaxiselemclass(elem) {
 };
 
 function entriesForRow(rowid) {
-    const reduced = [];
-    props.entries.forEach(entry => {
-        if (entry.rowid === rowid) {
-            reduced.push(entry);
-        }
-    })
-    return reduced;
+    const rowData = rowEntries.value.get(rowid);
+    if (rowData) {
+        return rowData.filter(entry => !entry.segmented);
+    }
+    return rowData;
 }
 
 function computeEntryPosition(entry) {
-    if (viewport.value) {
-        const start = entry.from;
-        const end = entry.to;
-        const position = { top: 5, bottom: 5};
-        if (xaxiscells.value[start] && xaxiscells.value[end]) {
-            const unitWidth = xaxiscells.value[start].getBoundingClientRect().width;
-            position.left = (start-1) * unitWidth;
-            position.width = (end - start + 1) * unitWidth;
-            return position;
-        }
+    const position = { top: -1, bottom: -1, left: -1, width: -1};
+    const start = entry.from;
+    const end = entry.to;
+    if (viewport.value && xaxiscells.value[start] && xaxiscells.value[end]) {
+        position.top = 5;
+        position.bottom = 5;
+        const unitWidth = xaxiscells.value[start].getBoundingClientRect().width;
+        position.left = (start - 1) * unitWidth;
+        position.width = (end - start + 1) * unitWidth;
     }
-    return { top: -1, bottom: -1, left: -1, right: -1}
+    return position;
 }
 
 </script>
@@ -105,7 +183,10 @@ function computeEntryPosition(entry) {
             </div>
         </div>
         <div class="footer">
-            <div class="yaxis" ref="yaxiscontent" :class="{'space': hasHorizontalScroll}">
+            <div class="yaxis" 
+                @scroll="contentscroll"
+                ref="yaxiscontent" 
+                :class="{'space': hasHorizontalScroll}">
                 <div class="content">
                     <div v-for="(yelem, index) in yaxis" 
                         class="element" 
@@ -120,7 +201,9 @@ function computeEntryPosition(entry) {
                     </div>
                 </div>
             </div>
-            <div class="viewport" @scroll="contentscroll" ref="viewport">
+            <div class="viewport" 
+                @scroll="contentscroll" 
+                ref="viewport">
                 <div class="content">
                     <div v-for="(yelem, index) in yaxis" 
                         class="row" 

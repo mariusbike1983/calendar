@@ -1,12 +1,14 @@
 <script setup>
 import Calendar from './components/Calendar.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed } from 'vue';
+import { createEntry } from './services/CalendarEntryService';
 
-const xAxisCount = ref(10);
+const xAxisCount = ref(31);
 const yAxisCount = ref(10);
 
 const xAxisElements = computed(() => {
     const elems = [];
+    let isWeekend = false;
     for(let i = 1; i <= xAxisCount.value; i++) {
         let elem = {
           text: i,
@@ -14,6 +16,10 @@ const xAxisElements = computed(() => {
         }
         if (i % 7 === 0) {
           elem.styles.push('hash');
+          isWeekend = true;
+        } else if (isWeekend) {
+          elem.styles.push('hash');
+          isWeekend = false;
         }
         if (i === 5) {
           elem.styles.push('highlighted');
@@ -35,20 +41,13 @@ const yAxisElements = computed(() => {
     return elems;
 });
 
+
 const entries = computed(() => {
     const elems = [];
-    for(let i = 1; i <= 30; i++) {
-        const start = 1 + i;
-        const end = start + 3;
-        const elem = {
-            rowid:  i,
-            text:   "Entry text "+i,
-            detail: "Entry detail"+i,
-            from:   start,
-            to:     end
-        };
-        elems.push(elem);
-    }
+    elems.push(createEntry("e1", 8, 16, 4,  "entry1"));
+    elems.push(createEntry("e2", 3, 10, 4,  "entry2"));
+    elems.push(createEntry("e3", 13, 20, 4, "entry3"));
+    //elems.push(createEntry("e4", 1, 19, 4,  "entry4"));
     return elems;
 });
 
