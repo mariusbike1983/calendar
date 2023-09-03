@@ -112,8 +112,15 @@ function intersectEntries(rowsize) {
         // replace row data entries with their segments
         for(let segmentKey of segments.keys()) {
             const tEntry = entriesById.get(segmentKey);
-            const ndx = rowdata.indexOf(tEntry);
             const segmentdata = segments.get(segmentKey);
+            if (segmentdata.length === 1 && 
+                segmentdata[0].from === tEntry.from && 
+                segmentdata[0].to === tEntry.to) {
+                    // this segment is the same size as the initial entry. doesn't make sense to 
+                    // replace the entry with the segment
+                continue;
+            }
+            const ndx = rowdata.indexOf(tEntry);
             rowdata.splice(ndx, 1, ...segmentdata);
         }
         // reset template
@@ -146,10 +153,7 @@ function xaxiselemclass(elem) {
 
 function entriesForRow(rowid) {
     const rowData = rowEntries.value.get(rowid);
-    if (rowData) {
-        return rowData.filter(entry => !entry.segmented);
-    }
-    return rowData;
+    return rowData ? rowData.filter(entry => !entry.segmented) : rowData;
 }
 
 function computeEntryPosition(entry) {
