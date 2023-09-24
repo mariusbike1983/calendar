@@ -1,8 +1,9 @@
 <script setup>
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import InfoElement from './InfoElement.vue';
 import CalendarEntry from './CalendarEntry.vue';
-import { createEntry } from '../services/CalendarEntryService';
+import { handleNewSegment } from '../services/CalendarService';
+import HolidayEntry from './HolidayEntry.vue';
 
 const props = defineProps({
     xaxis:      [],
@@ -18,7 +19,7 @@ const xaxiscells = ref([]);
 const viewport = ref(null);
 const hasVerticalScroll = ref(false);
 const hasHorizontalScroll = ref(false);
-const selectedRowIndex = ref(-1);
+const selectedCalEntry = ref("");
 const rowEntries = ref(new Map());
 const entriesById = new Map();
 
@@ -29,14 +30,6 @@ async function contentscroll(e) {
     });
 }
 
-function selectRow(index) {
-    selectedRowIndex.value = index;
-}
-
-function isRowSelected(index){
-    return selectedRowIndex.value === index
-};
-
 onMounted(() => {
     nextTick(() => {
         synchUi();
@@ -45,13 +38,25 @@ onMounted(() => {
     });
 });
 
+watch(props, () => {
+    nextTick(() => synchUi());
+}, {
+    immediate: true
+});
+
+const selectEntry = urid => { selectedCalEntry.value = urid; }
+const isCalEntrySelected = urid => selectedCalEntry.value === urid;
+const entriesForRow = rowid => rowEntries.value.get(rowid);
+const coverEntries = () => props.entries.filter(entry => entry.rowid === null);
+const isCalendarEmpty = computed(() => props.entries? props.entries.length === 0: true);
+
 /**
  * Distribute entries by row
  */
 function distributeEntries() {
     if (props.entries) {
         props.entries.forEach(entry => {
-            entriesById.set(entry.uuid, entry);
+            entriesById.set(entry.urid, entry);
             let rowdata = []; 
             if (rowEntries.value.has(entry.rowid)) {
                 rowdata = rowEntries.value.get(entry.rowid);
@@ -67,12 +72,13 @@ function intersectEntries(rowsize) {
     const rowTemplate = Array(rowsize).fill("-1");
     for (let rowdata of rowEntries.value.values()){
         if (rowdata.length <= 1) {
+            // row contains at most one entry, doesn't make sense to search for segments
             continue;
         }
         // row contains at least two entries that might overlap
         // construct the template overlapping structure (one pass for all possible segments)
         rowdata.forEach(entry => {
-            rowTemplate.fill(entry.uuid, entry.from-1, entry.to);
+            rowTemplate.fill(entry.urid, entry.from-1, entry.to);
         });
         // compute segments and constucts temporary entries
         let pId = "", newStart = -1;
@@ -90,13 +96,7 @@ function intersectEntries(rowsize) {
                 // the segment has ended (either by finding an unoccupied cell or by the start of a new segment)
                 if (newStart !== -1) { // theoretically could not happen... but still
                     const tEntry = entriesById.get(pId);
-                    let segmentsData = segments.get(tEntry.uuid);
-                    if (!segmentsData) {
-                        segmentsData = [];
-                        segments.set(tEntry.uuid, segmentsData);
-                    }
-                    const segment = createEntry(tEntry.uuid, newStart, index, tEntry.rowid, tEntry.text, tEntry.detail);
-                    segmentsData.push(segment);
+                    handleNewSegment(tEntry, segments, newStart, index);
                     if (cell !== "-1") {
                         // a new segment already starts here
                         newStart = index+1;
@@ -109,19 +109,39 @@ function intersectEntries(rowsize) {
                 }
             }
         });
+        // potentially, a segment ended at the edge of the row
+        if (pId !== "" && newStart !== -1) {
+            const tEntry = entriesById.get(pId);
+            handleNewSegment(tEntry, segments, newStart, tEntry.to);
+        }
+
         // replace row data entries with their segments
         for(let segmentKey of segments.keys()) {
             const tEntry = entriesById.get(segmentKey);
             const segmentdata = segments.get(segmentKey);
             if (segmentdata.length === 1 && 
-                segmentdata[0].from === tEntry.from && 
-                segmentdata[0].to === tEntry.to) {
+                segmentdata[0].from === tEntry.from && segmentdata[0].to === tEntry.to) {
                     // this segment is the same size as the initial entry. doesn't make sense to 
                     // replace the entry with the segment
                 continue;
             }
             const ndx = rowdata.indexOf(tEntry);
             rowdata.splice(ndx, 1, ...segmentdata);
+        }
+
+        if (rowdata.length > 1) {
+            rowdata.forEach(entry => {
+                rowdata.forEach(nextEntry => {
+                    if (entry.from === nextEntry.to + 1) {
+                        entry.intersectsLeft = true;
+                        nextEntry.intersectsRight = true;
+                    }
+                    if (entry.to === nextEntry.from - 1) {
+                        entry.intersectsRight = true;
+                        nextEntry.intersectsLeft = true;
+                    }
+                });
+            });
         }
         // reset template
         rowTemplate.fill("-1", 0, rowTemplate.length);
@@ -138,32 +158,26 @@ function synchUi() {
     }
 }
 
-watch(props, () => {
-    nextTick(() => synchUi());
-}, {
-    immediate: true
-});
-
-function xaxiselemclass(elem) {
-    return {        
+const xaxiselemclass = elem => {
+    return {
         'hash': elem.styles.indexOf("hash") !== -1,
         'highlighted': elem.styles.indexOf("highlighted") !== -1
     };
 };
 
-function entriesForRow(rowid) {
-    const rowData = rowEntries.value.get(rowid);
-    return rowData ? rowData.filter(entry => !entry.segmented) : rowData;
-}
-
 function computeEntryPosition(entry) {
     const position = { top: -1, bottom: -1, left: -1, width: -1};
     const start = entry.from;
     const end = entry.to;
-    if (viewport.value && xaxiscells.value[start] && xaxiscells.value[end]) {
-        position.top = 5;
-        position.bottom = 5;
-        const unitWidth = xaxiscells.value[start].getBoundingClientRect().width;
+    if (viewport.value && xaxiscells.value[start-1] && xaxiscells.value[end-1]) {
+        if (entry.rowid) {
+            position.top = 5;
+            position.bottom = 5;
+        } else {
+            position.top = 0;
+            position.bottom = 0;
+        }
+        const unitWidth = xaxiscells.value[start-1].getBoundingClientRect().width;
         position.left = (start - 1) * unitWidth;
         position.width = (end - start + 1) * unitWidth;
     }
@@ -173,69 +187,89 @@ function computeEntryPosition(entry) {
 </script>
 
 <template>
-    <div class="calendar-wrapper">
-        <div class="header" :class="{'space': hasVerticalScroll}">
-            <div class="corner"></div>
-            <div class="xaxis" ref="xaxiscontent">
-                <div v-for="(elem, index) in xaxis" 
-                    class="head" 
-                    ref="xaxiscells" 
-                    :class="xaxiselemclass(elem)"
-                    :key="index">
-                    <span> {{ elem.text }}</span>
+    <div 
+        class="calendar-wrapper"
+        :id="'calendar123'"
+    >
+        <div v-if="!isCalendarEmpty" class="calendar">
+            <div class="header" :class="{'space': hasVerticalScroll}">
+                <div class="corner"></div>
+                <div class="xaxis" ref="xaxiscontent">
+                    <div v-for="(elem, index) in xaxis" 
+                        class="head" 
+                        ref="xaxiscells" 
+                        :class="xaxiselemclass(elem)"
+                        :key="index">
+                        <span> {{ elem.text }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="footer">
+                <div class="yaxis" 
+                    @scroll="contentscroll"
+                    ref="yaxiscontent" 
+                    :class="{'space': hasHorizontalScroll}">
+                    <div class="content">
+                        <div v-for="(yelem, index) in yaxis" 
+                            class="element" 
+                            :key="index" 
+                            ref="yaxisrows">
+                            <InfoElement
+                                :title = "yelem.title"
+                                :text = "yelem.text"
+                            />
+                        </div>
+                    </div>
+                </div>
+                <div class="viewport" 
+                    @scroll="contentscroll" 
+                    ref="viewport">
+                    <div class="content">
+                        <div v-for="(yelem, index) in yaxis" 
+                            class="row" 
+                            :key="index" 
+                            ref="contentrows">
+                            <div v-for="(elem, index2) in xaxis" 
+                                class="cell" 
+                                :key="index2" 
+                                :class="xaxiselemclass(elem)">
+                            </div>
+                            <CalendarEntry v-for="(entry, eindex) in entriesForRow(yelem.rowid)"
+                                :key="eindex"
+                                :text="entry.text"
+                                :detail="entry.detail"
+                                :rowid="yelem.rowid"
+                                :position="computeEntryPosition(entry)"
+                                :intersectsLeft="entry.intersectsLeft"
+                                :intersectsRight="entry.intersectsRight"
+                                :background-color="entry.backgroundcolor"
+                                :accent="entry.accent"
+                                :selected="isCalEntrySelected(entry.urid)"
+                                @click="selectEntry(entry.urid)"
+                            />
+                        </div>
+                        <HolidayEntry v-for="(entry, eindex) in coverEntries()"
+                            :key="eindex"
+                            :position="computeEntryPosition(entry)"
+                            :background-color="entry.backgroundcolor"
+                        />
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="footer">
-            <div class="yaxis" 
-                @scroll="contentscroll"
-                ref="yaxiscontent" 
-                :class="{'space': hasHorizontalScroll}">
-                <div class="content">
-                    <div v-for="(yelem, index) in yaxis" 
-                        class="element" 
-                        :key="index" 
-                        ref="yaxisrows"
-                        @click="selectRow(index)"
-                        :class="{'selected': isRowSelected(index)}">
-                        <InfoElement
-                            :title = "yelem.title"
-                            :text = "yelem.text"
-                        />
-                    </div>
-                </div>
-            </div>
-            <div class="viewport" 
-                @scroll="contentscroll" 
-                ref="viewport">
-                <div class="content">
-                    <div v-for="(yelem, index) in yaxis" 
-                        class="row" 
-                        :key="index" 
-                        ref="contentrows"
-                        @click="selectRow(index)"
-                        :class="{'selected': isRowSelected(index)}">
-                        <div v-for="(elem, index2) in xaxis" 
-                            class="cell" 
-                            :key="index2" 
-                            :class="xaxiselemclass(elem)">
-                        </div>
-                        <CalendarEntry v-for="(entry, eindex) in entriesForRow(yelem.rowid)"
-                            :key="eindex"
-                            :text="entry.text"
-                            :detail="entry.detail"
-                            :rowid="yelem.rowid"
-                            :position="computeEntryPosition(entry)"
-                        />
-                    </div>
-                </div>
-            </div>
+        <div v-else>
+            {{ 'NO CONTENT' }}
         </div>
     </div>
 </template>
 
 <style scoped lang="less">
 .calendar-wrapper {  
+    width: 100%;
+    height: 100%;
+}
+
+.calendar {
     width: 100%;
     height: 100%;
     .header {
@@ -309,7 +343,8 @@ function computeEntryPosition(entry) {
             .content {
                 display: flex;
                 flex-direction: column;
-                
+                position: relative;
+
                 .element {
                     width: 100%;
                     border-bottom: 1px solid black;
@@ -334,6 +369,7 @@ function computeEntryPosition(entry) {
             .content {
                 display: flex;
                 flex-direction: column;
+                position: relative;
                 .row {
                     display: flex;
                     position: relative;

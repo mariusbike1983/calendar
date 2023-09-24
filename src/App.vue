@@ -1,10 +1,10 @@
 <script setup>
 import Calendar from './components/Calendar.vue';
 import { ref, computed } from 'vue';
-import { createEntry } from './services/CalendarEntryService';
+import { createEntry, createHoliday } from './services/CalendarEntryService';
 
 const xAxisCount = ref(31);
-const yAxisCount = ref(10);
+const yAxisCount = ref(15);
 
 const xAxisElements = computed(() => {
     const elems = [];
@@ -44,10 +44,16 @@ const yAxisElements = computed(() => {
 
 const entries = computed(() => {
     const elems = [];
-    elems.push(createEntry("e1", 8, 16, 4,  "entry1"));
-    elems.push(createEntry("e2", 3, 10, 4,  "entry2"));
-    elems.push(createEntry("e3", 13, 20, 4, "entry3"));
-    //elems.push(createEntry("e4", 1, 19, 4,  "entry4"));
+    
+    elems.push(createEntry("eY", 1,  10, 2, "Sick leave", "", "tomato", "red"));
+    elems.push(createEntry("eX", 2,  13, 3, "Work from home", "", "azure", "green"));
+    elems.push(createEntry("e1", 2,  13, 4, "Work from home", "", "azure", "green"));
+    elems.push(createEntry("e2", 3,  10, 4, "Holiday", "XMas holidays", "lightblue", "red"));
+    elems.push(createEntry("e3", 15, 24, 4, "Meeting", "Workshop for COS", "cyan", "blue"));
+    elems.push(createEntry("e5", 26, 29, 4, "Workshop", "Workshop for CSS", "magenta", "lightblue"));
+    elems.push(createEntry("e4", 17, 19, 4, "Bank", "Bank holiday", "gray", "purple"));
+
+    elems.push(createHoliday("eZ", 19, 19, "HOLIDAY", "slategray"));
     return elems;
 });
 
@@ -66,9 +72,9 @@ const entries = computed(() => {
 <style scoped lang="less">
   .wrapper {
       padding: 20px;
-      width: 900px;
-      height: 600px;
       background-color: white;
+      height: 600px;
+      width: 900px;
   }
 
 </style>

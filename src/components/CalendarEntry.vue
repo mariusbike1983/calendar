@@ -6,13 +6,16 @@ const props = defineProps({
     text:       "",
     detail:     "",
     position:   {
-        top:                -1, 
-        left:               -1, 
-        botton:             -1, 
-        width:              -1,
-        intersectsLeft:     false,
-        intersectsRight:    false
+        top:    -1, 
+        left:   -1, 
+        botton: -1, 
+        width:  -1,
     },
+    intersectsLeft:     false,
+    intersectsRight:    false,
+    backgroundColor: "",
+    accent: "",
+    selected: false
 });
 
 const computeStyle = computed(() => {
@@ -21,17 +24,21 @@ const computeStyle = computed(() => {
         props.position.width >= 0 &&
         props.position.bottom >= 0) {
         return {
-            top:    props.position.top+"px",
-            left:   props.position.left+"px",
-            width:  props.position.width+"px",
-            bottom: props.position.bottom+"px",
-            display: ''
+            top:                props.position.top+"px",
+            left:               props.position.left+"px",
+            width:              props.position.width+"px",
+            bottom:             props.position.bottom+"px",
+            display:            '',
+            backgroundColor:    props.backgroundColor,
+            borderColor:        props.accent
         }
     }
     return {
         display: 'none'
     }
-})
+});
+
+const emits = defineEmits(['click']);
 
 </script>
 
@@ -39,9 +46,11 @@ const computeStyle = computed(() => {
     <div class="entry" 
         :style="computeStyle" 
         :class="{
-            'cut-left': props.position.intersectsLeft, 
-            'cut-right': props.position.intersectsRight
-        }">
+            'cut-left': props.intersectsLeft, 
+            'cut-right': props.intersectsRight,
+            'selected': props.selected
+        }"
+        @click="emits('click')">
         <div class="text">{{ text }}</div>
         <div class="detail">{{ detail }}</div>
     </div>
@@ -49,15 +58,22 @@ const computeStyle = computed(() => {
 
 <style scoped lang="less">
 .entry {
-    border: 1px solid red;
+    border-width: 1px;
+    border-style: solid;
     border-left-width: 4px;
     border-radius: 5px;
-    background-color: aquamarine;
+    padding-left: 6px;
+    padding-right: 3px;
     color: black;
     display: flex;
     flex-direction: column;
     justify-items: center;
     position: absolute;
+
+    &.selected {
+        border-color: orange !important;
+    }
+
     &.cut-right {
         border-top-right-radius: 0px;
         border-bottom-right-radius: 0px;
@@ -66,20 +82,22 @@ const computeStyle = computed(() => {
         border-top-left-radius: 0px;
         border-bottom-left-radius: 0px;
     }
-
     .detail {
         font-size: 11px;
-        color: slateblue;
+        color: slategray;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        user-select: none;
+        justify-self: center;
     }
     .text {
         font-size: 13px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        user-select: none;
+        justify-self: center;
     }
-
 }
 </style>
